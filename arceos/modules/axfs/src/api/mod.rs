@@ -87,3 +87,13 @@ pub fn remove_file(path: &str) -> io::Result<()> {
 pub fn rename(old: &str, new: &str) -> io::Result<()> {
     crate::root::rename(old, new)
 }
+
+/// Move a file to a new location.
+pub fn move_file(path: &str, location: &str) -> io::Result<()> {
+    // read contents from path
+    let contents = read(path)?;
+    // write contents to location
+    write(location, contents)?;
+    // remove path
+    crate::root::remove_file(None, path)
+}

@@ -249,6 +249,8 @@ pub mod fs {
         ///
         /// It will delete the original file if `old` already exists.
         pub fn ax_rename(old: &str, new: &str) -> AxResult;
+        /// Move a file to a new location.
+        pub fn ax_move_file(path: &str, location: &str) -> AxResult;
 
         /// Returns the current working directory.
         pub fn ax_current_dir() -> AxResult<alloc::string::String>;

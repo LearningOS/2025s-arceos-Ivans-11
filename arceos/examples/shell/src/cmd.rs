@@ -27,6 +27,8 @@ const CMD_TABLE: &[(&str, CmdHandler)] = &[
     ("pwd", do_pwd),
     ("rm", do_rm),
     ("uname", do_uname),
+    ("rename", do_rename),
+    ("mv", do_mv),
 ];
 
 fn file_type_to_char(ty: FileType) -> char {
@@ -272,6 +274,80 @@ fn do_exit(_args: &str) {
     std::process::exit(0);
 }
 
+/// rename (dir to dir) or (file to file)
+fn do_rename(args: &str) {
+    let (old, new) = split_whitespace(args);
+    if old.is_empty() || new.is_empty() {
+        print_err!("rename", "missing operand");
+        return;
+    }
+    if old == new {
+        return;
+    }
+    if new.contains(char::is_whitespace) {
+        print_err!("rename", format_args!("invalid new name '{new}'"));
+        return;
+    }
+
+    if let Err(e) = fs::rename(old, new) {
+        print_err!("rename", format_args!("cannot rename '{old}' to '{new}'"), e);
+    }
+}
+
+// move (file to dir_exist) or (dir to dir_exist) or (file to file_new) or (dir to dir_new)
+fn do_mv(args: &str) {
+    let (old, new) = split_whitespace(args);
+    if old.is_empty() || new.is_empty() {
+        print_err!("mv", "missing operand");
+        return;
+    }
+    if old == new {
+        return;
+    }
+    if new.contains(char::is_whitespace) {
+        print_err!("mv", format_args!("invalid new path '{new}'"));
+        return;
+    }
+    
+    fn mv_one(old: &str, new: &str) -> io::Result<()> {
+        if fs::metadata(old)?.is_dir() {
+            match fs::metadata(new) {
+                Ok(metadata) => {
+                    if metadata.is_dir() {
+                        let new_location = String::from(new) + "/" + getname(old);
+                        fs::move_dir(old, &new_location)
+                    } else {
+                        print_err!("mv", format_args!("cannot move '{old}' to a file"));
+                        Ok(())
+                    }
+                },
+                Err(_) => {
+                    fs::rename(old, new)
+                }
+            }
+        } else {
+            match fs::metadata(new) {
+                Ok(metadata) => {
+                    if metadata.is_dir() {
+                        let new_location = String::from(new) + "/" + getname(old);
+                        fs::move_file(old, &new_location)
+                    } else {
+                        print_err!("mv", format_args!("the file '{new}' already exists"));
+                        Ok(())
+                    }
+                },
+                Err(_) => {
+                    fs::rename(old, new)
+                }
+            }
+        }
+    }
+
+    if let Err(e) = mv_one(old, new) {
+        print_err!("mv", format_args!("cannot move '{old}'"), e);
+    }
+}
+
 pub fn run_cmd(line: &[u8]) {
     let line_str = unsafe { core::str::from_utf8_unchecked(line) };
     let (cmd, args) = split_whitespace(line_str);
@@ -290,4 +366,9 @@ fn split_whitespace(str: &str) -> (&str, &str) {
     let str = str.trim();
     str.find(char::is_whitespace)
         .map_or((str, ""), |n| (&str[..n], str[n + 1..].trim()))
+}
+
+fn getname(path: &str) -> &str {
+    path.rfind('/')
+        .map_or(path, |n| &path[n + 1..])
 }

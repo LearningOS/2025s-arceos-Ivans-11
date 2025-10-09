@@ -78,6 +78,10 @@ pub fn ax_rename(old: &str, new: &str) -> AxResult {
     axfs::api::rename(old, new)
 }
 
+pub fn ax_move_file(path: &str, location: &str) -> AxResult {
+    axfs::api::move_file(path, location)
+}
+
 pub fn ax_current_dir() -> AxResult<String> {
     axfs::api::current_dir()
 }

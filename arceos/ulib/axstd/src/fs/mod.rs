@@ -75,3 +75,30 @@ pub fn remove_file(path: &str) -> io::Result<()> {
 pub fn rename(old: &str, new: &str) -> io::Result<()> {
     arceos_api::fs::ax_rename(old, new)
 }
+
+/// Move a file to a new location.
+pub fn move_file(path: &str, location: &str) -> io::Result<()> {
+    arceos_api::fs::ax_move_file(path, location)
+}
+
+/// Move a directory to a new location.
+pub fn move_dir(path: &str, location: &str) -> io::Result<()> {
+    DirBuilder::new().create(location)?;
+
+    let mut entries = read_dir(path)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name())
+            .collect::<Vec<_>>();
+    entries.sort();
+    for entry in entries {
+        let entry = entry.as_str();
+        let src = String::from(path) + "/" + entry;
+        let dst = String::from(location) + "/" + entry;
+        if metadata(&src)?.is_dir() {
+            move_dir(&src, &dst)?;
+        } else {
+            move_file(&src, &dst)?;
+        }
+    }
+    arceos_api::fs::ax_remove_dir(path)
+}
