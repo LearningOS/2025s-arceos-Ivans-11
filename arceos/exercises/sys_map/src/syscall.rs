@@ -8,6 +8,9 @@ use axtask::current;
 use axtask::TaskExtRef;
 use axhal::paging::MappingFlags;
 use arceos_posix_api as api;
+use axhal::mem::{VirtAddr, phys_to_virt, MemoryAddr};
+use alloc::vec;
+use memory_addr::VirtAddrRange;
 
 const SYS_IOCTL: usize = 29;
 const SYS_OPENAT: usize = 56;
@@ -115,14 +118,10 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             ax_println!("[SYS_EXIT]: system is exiting ..");
             axtask::exit(tf.arg0() as _)
         },
-        SYS_MMAP => sys_mmap(
-            tf.arg0() as _,
-            tf.arg1() as _,
-            tf.arg2() as _,
-            tf.arg3() as _,
-            tf.arg4() as _,
-            tf.arg5() as _,
-        ),
+        SYS_MMAP => {
+            ax_println!("[SYS_MMAP]: mmap ..");
+            sys_mmap(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _, tf.arg3() as _, tf.arg4() as _, tf.arg5() as _)
+        },
         _ => {
             ax_println!("Unimplemented syscall: {}", syscall_num);
             -LinuxError::ENOSYS.code() as _
@@ -140,7 +139,41 @@ fn sys_mmap(
     fd: i32,
     _offset: isize,
 ) -> isize {
-    unimplemented!("no sys_mmap!");
+    let curr = current();
+    let mut uspace = curr.task_ext().aspace.lock();
+
+    let mut addr = addr as usize;
+    if addr == 0 { // if addr is NULL, find a free area
+        addr = uspace.find_free_area(addr.into(), length.align_up_4k(), VirtAddrRange::from_start_size(uspace.base(), uspace.size())).unwrap().as_usize();
+    }
+    let vaddr = VirtAddr::from(addr).align_up_4k(); // align to page boundary
+
+    let mapping_flags = MappingFlags::from(MmapProt::from_bits_truncate(prot));
+    let mmap_flags = MmapFlags::from_bits_truncate(flags);
+    
+    uspace.map_alloc(vaddr, length.align_up_4k(), mapping_flags, true);
+
+    if !mmap_flags.contains(MmapFlags::MAP_ANONYMOUS) { // load data from file
+        ax_println!("mmap from file fd: {}", fd);
+        assert!(fd >= 0);
+        let mut buf = vec![0u8; length];
+        api::sys_read(fd, buf.as_mut_ptr() as *mut _, length);
+
+        let (paddr, _, _) = uspace
+            .page_table()
+            .query(vaddr)
+            .unwrap_or_else(|_| panic!("Mapping failed for segment: {:#x}", vaddr));
+
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                buf.as_ptr(),
+                phys_to_virt(paddr).as_mut_ptr(),
+                length,
+            );
+        }
+    }
+    let addr: usize = vaddr.into();
+    addr as isize
 }
 
 fn sys_openat(dfd: c_int, fname: *const c_char, flags: c_int, mode: api::ctypes::mode_t) -> isize {
